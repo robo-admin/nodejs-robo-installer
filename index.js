@@ -1,10 +1,17 @@
 'use strict';
 
-function ModuleDefinition(name, path, info) {
+function ModuleError(message) {
+    Error.call(this, message);
+}
+ModuleError.prototype = Object.create(Error.prototype);
+ModuleError.prototype.constructor = ModuleError;
+
+function ModuleDefinition(name, path, meta) {
     this.name = name;
     this.path = path;
-    this.info = info;
-    this.file = undefined;
+    if (!meta) throw new ModuleError('meta');
+    this.meta = meta;
+    this.payload = undefined;
 }
 
 function ModuleInstaller($) {
@@ -14,36 +21,36 @@ function ModuleInstaller($) {
         var fs = require('fs'),
             path = require('path');
         fs.readdirSync(rootPath).forEach((name) => {
-            var sub = path.join(rootPath, name);
-            var stat = fs.statSync(sub);
+            var modulePath = path.join(rootPath, name);
+            var stat = fs.statSync(modulePath);
             var moduleName = parent ? `${parent}.${name}` : name;
             if (stat.isDirectory()) {
-                var moduleMetaPath = path.join(sub, 'meta.js');
+                var moduleMetaPath = path.join(modulePath, 'meta.js');
                 if (fs.existsSync(moduleMetaPath) && fs.statSync(moduleMetaPath).isFile()) {
-                    var definition = new ModuleDefinition(moduleName, sub, require(moduleMetaPath));
-                    var moduleFilePath = path.join(sub, 'payload.js');
-                    fs.existsSync(moduleFilePath) && fs.statSync(moduleFilePath).isFile()
-                    definition.file = moduleFilePath;
+                    var definition = new ModuleDefinition(moduleName, modulePath, require(moduleMetaPath));
+                    var modulePayloadPath = path.join(modulePath, 'payload.js');
+                    fs.existsSync(modulePayloadPath) && fs.statSync(modulePayloadPath).isFile()
+                    definition.payload = modulePayloadPath;
                     modules.push(definition);
                 }
-                modules = modules.concat(discoverModules(sub, moduleName));
+                modules = modules.concat(discoverModules(modulePath, moduleName));
             }
         });
         return modules;
     }
 
-    var installModule = function (module) {
-        if (undefined !== module.info.install) {
-            module.info.install($, module.name, module.path);
+    var installSingle = function (module) {
+        if (undefined !== module.meta.install) {
+            module.meta.install($, module.name, module.path);
         } else {
-            var binding = $.bind(module.name).to(require(module.file));
-            if (undefined !== module.info.use) {
-                binding = binding.use.apply(binding, module.info.use);
+            var binding = $.bind(module.name).to(require(module.payload));
+            if (undefined !== module.meta.use) {
+                binding = binding.use.apply(binding, module.meta.use);
             }
-            if (undefined !== module.info.set) {
-                binding = binding.set(module.info.set);
+            if (undefined !== module.meta.set) {
+                binding = binding.set(module.meta.set);
             }
-            if (module.info.singleton) {
+            if (module.meta.singleton) {
                 binding = binding.asSingleton();
             }
         }
@@ -52,7 +59,7 @@ function ModuleInstaller($) {
     this.install = function (path) {
         var modules = discoverModules(path);
         modules.forEach(function (module) {
-            installModule(module);
+            installSingle(module);
         });
     };
 }
