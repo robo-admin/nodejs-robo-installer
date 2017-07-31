@@ -72,6 +72,7 @@ Metadata is mandatory for all modules. It must be an object that is assigned to 
 - `set` (optional): An object that specifies dependencies which will be injected to module via Property Injection.
 - `singleton` (optional): A flag that indicates if the module instance is singleton or not. False (transient) by default.
 - `install` (optional): A method that is used for custom installation of the module. See Customizing Module Installation for more information.
+- `on` (optional): An object that contains a Pre-installation Check, a Post-installation Check and a Final Check functions. See Installation Checklist for more information.
 
 For example, given your application has four custom modules: `users`, `log`, `emitter`, and `db`. All located in folder `modules`: 
 
@@ -290,7 +291,7 @@ The function `install` accepts following parameters:
 
 - <strong>container</strong>: The instance of Robo-Container used to bind module to.
 - <strong>name</strong>: Name of the module recognized by the Module Installer, e.g 'config', 'config.development'.
-- <strong>path</strong>: Path to the folder that contains the module.
+- <strong>path</strong>: Path to the directory that contains the module.
 
 _Once specified, only function `install` will take effects and all other settings including `use`, `set` and `singleton` will be skipped._
 
@@ -347,7 +348,9 @@ module.exports = {
 }
 ```
 
-_`$('core')` will throw a `ComponentNotFoundError` in this case._
+_`$('core')` will throw a `ComponentNotFoundError` in this case as it's not installed._
+
+_Do not install any utility library as module, e.g ImmutableJS. Otherwise you will make your application structure unnecessarily complex and you will also loose IDE intelli-sense supports as well._ 
 
 ## Thin Module
 
@@ -370,4 +373,160 @@ module.exports = {
         });
     }
 }
+```
+
+## Module Installation Checks
+
+Robo Installer provides a mechanism to allow you to perform checks on installation of any module, together with final check on installation of all modules from the given path.
+
+To use the check, in module's metadata, specify an additional property named `on` whose value exposes three methods as in below snippet:
+
+```js
+// meta.js
+module.exports = {
+    ...
+    on: {
+        installing: (container, name, path) => {
+            // will be called BEFORE installing module.
+        },
+        installed: (container, name, path) => {
+            // will be called right AFTER module installed.
+        },
+        allInstalled: (container, name, path) => {
+            // will be called right AFTER ALL modules installed.
+        }
+    }
+}
+```
+
+In which, every method accepts the same following parameters: 
+
+- <strong>container</strong>: The instance of Robo-Container used to bind module to.
+- <strong>name</strong>: Name of the module recognized by the Module Installer, e.g 'config', 'config.development'.
+- <strong>path</strong>: Path to the directory that contains the module.
+
+### Method Usage
+
+#### `installing` (optional)
+
+This method is called when the corresponding module is about to be installed. It is suitable for a pre-install check and MUST return a boolean indicating if the installer should install the module or not. If a `false` value returned, the module will not be installed.
+
+_If this method is not specified, pre-install check for the corresponding module will be skipped and the module will be installed by default._
+
+```js
+// meta.js
+module.exports = {
+    ...
+    on: {
+        installing: ($, name, path) => {
+            var shouldInstall = doSomePreinstallCheck();
+            if (shouldInstall) {
+                console.log(`Module will be installed`);
+            }
+            else {
+                console.log(`Module will NOT be installed`);
+            }
+            return shouldInstall;
+        }        
+    }
+}
+```
+
+By returning a `false`, the module will be skipped from installation while the installer will continue installing the rests. To terminate the entire installation process, instead of returning `false`, you throw an `Error` from inside this method. By doing this, you should handle error at application-level where the installer gets called:
+
+```js
+// meta.js
+module.exports = {
+    ...
+    on: {
+        installing: ($, name, path) => {
+            var shouldInstall = doPreinstallCheck();
+            if (!shouldInstall)
+                throw new Error(`Pre-install Check for ${name} MUST be passed`);
+            return shouldInstall;
+        }        
+    }
+}
+```
+
+And at application-level: 
+
+```js
+// index.js
+try {
+    installer.install(__dirname + '/modules');
+} catch (ex) {
+    // notify error and exit application here.
+}
+```
+
+#### `installed` (optional)
+
+This method is called right after the corresponding module installed. It is suitable for a post-install check and does not need to return any values.
+
+Similar to `installing`, you can throw an error from inside this method to terminate entire installation process.
+
+```js
+// meta.js
+module.exports = {
+    ...
+    on: {
+        installed: ($, name, path) => {
+            var successfullyInstalled = doPostinstallCheck();     
+            if (!successfullyInstalled)                           
+                throw new Error(`Module ${name} was improperly installed.`)               
+        }        
+    }
+}
+```
+
+_If this method is not specified, post-install check for the corresponding module will be skipped._
+
+#### `allInstalled` (optional)
+
+This method is called after ALL modules installed. It's suitable for a final check and does not need to return any values.
+
+Similar to `installing` and `installed`, you can throw an error from inside this function to terminate entire installation process.
+
+```js
+// meta.js
+module.exports = {
+    ...
+    on: {
+        installed: ($, name, path) => {
+            var finalCheckPassed = doFinalCheck();     
+            if (!finalCheckPassed)                           
+                throw new Error(`Some modules were improperly installed.`)               
+        }        
+    }
+}
+```
+
+## Verbose Installation
+
+If you want the installer to give you more detailed information of what it was doing during installation process, use install with verbose option:
+
+```js
+installer.install(__dirname + '/modules', true); // verbose set to true. False by default.
+```
+
+Output in console will look like: 
+
+```
+DISCOVERING MODULES
+Found 1 modules under '/home/projects/test/modules'
+--------------------------------
+Installing Module: [sample] at '/home/projects/test/modules/sample'
+Pre-installation Check FOUND.
+Pre-installation Check PASSED.
+Installing module.
+Module installed.
+Post-installation Check FOUND.
+Post-installation Check COMPLETED.
+--------------------------------
+All modules installed.
+Found Final Check for [sample].
+Final Check PASSED.
+--------------------------------
+INSTALLATION COMPLETED
 ```
