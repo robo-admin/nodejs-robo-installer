@@ -1,19 +1,5 @@
 'use strict';
 
-function ModuleError(message) {
-    Error.call(this, message);
-}
-ModuleError.prototype = Object.create(Error.prototype);
-ModuleError.prototype.constructor = ModuleError;
-
-function ModuleDefinition(name, path, meta) {
-    this.name = name;
-    this.path = path;
-    if (!meta) throw new ModuleError('meta');
-    this.meta = meta;
-    this.payload = undefined;
-}
-
 function Module(definition) {
 
     var isInstalled = false;
@@ -78,7 +64,7 @@ function Module(definition) {
         if (!isInstalled) return;
         if (undefined === definition.meta.on || typeof definition.meta.on.allInstalled !== 'function') return;
         if (verbose)
-            console.log(`Found Final Check for [${definition.name}].`);
+            console.log(`Final Check for [${definition.name}] FOUND.`);
         definition.meta.on.allInstalled($, definition.name, definition.path);
         if (verbose)
             console.log(`Final Check PASSED.`);
@@ -87,7 +73,7 @@ function Module(definition) {
     this.install = function ($, verbose) {
         if (verbose) {
             console.log('--------------------------------')
-            console.log(`Installing Module: [${definition.name}] at '${definition.path}'`);
+            console.log(`Module [${definition.name}] at '${definition.path}'.`);
         }
         if (!shouldInstall($, verbose)) return;
         doInstall($, verbose);
@@ -98,8 +84,21 @@ function Module(definition) {
 
 module.exports = (container) => new(function ($) {
 
-    var discoverModules = function (rootPath, parent) {
-        var modules = [];
+    var discoverModules = function (paths, verbose) {
+        var found = new Map();
+        var length = paths.length;
+        while (length > 0) {
+            var path = paths[--length];
+            if (verbose)
+                console.log(`Discovering under '${path}'`);
+            discoverModulesInDir(found, path, null, verbose);
+            if (verbose)
+                console.log('------------');
+        }
+        return found;
+    }
+
+    var discoverModulesInDir = function (found, rootPath, parent, verbose) {
         var fs = require('fs'),
             path = require('path');
         fs.readdirSync(rootPath).forEach((name) => {
@@ -109,16 +108,31 @@ module.exports = (container) => new(function ($) {
             if (stat.isDirectory()) {
                 var moduleMetaPath = path.join(modulePath, 'meta.js');
                 if (fs.existsSync(moduleMetaPath) && fs.statSync(moduleMetaPath).isFile()) {
-                    var definition = new ModuleDefinition(moduleName, modulePath, require(moduleMetaPath));
-                    var modulePayloadPath = path.join(modulePath, 'payload.js');
-                    fs.existsSync(modulePayloadPath) && fs.statSync(modulePayloadPath).isFile()
-                    definition.payload = modulePayloadPath;
-                    modules.push(new Module(definition));
+                    if (verbose)
+                        console.log(`Found [${moduleName}].`);
+                    if (found.has(moduleName)) {
+                        if (verbose)
+                            console.log(`[${moduleName}] already exists and will be skipped.`);
+                    } else {
+                        var moduleMeta = require(moduleMetaPath);
+                        if (!moduleMeta) throw new Error(`Invalid meta for [${moduleName}`);
+                        var definition = {
+                            name: moduleName,
+                            path: modulePath,
+                            meta: moduleMeta
+                        };
+                        var modulePayloadPath = path.join(modulePath, 'payload.js');
+                        if (fs.existsSync(modulePayloadPath) && fs.statSync(modulePayloadPath).isFile()) {
+                            definition.payload = modulePayloadPath;
+                        } else if (typeof definition.meta.install !== 'function') {
+                            throw new Error(`Invalid payload for [${moduleName}]`);
+                        }
+                        found.set(moduleName, new Module(definition));
+                    }
                 }
-                modules = modules.concat(discoverModules(modulePath, moduleName));
+                discoverModulesInDir(found, modulePath, moduleName, verbose);
             }
         });
-        return modules;
     }
 
     var onAllInstalled = function (modules, verbose) {
@@ -127,16 +141,16 @@ module.exports = (container) => new(function ($) {
         })
     }
 
-    this.install = function (path, verbose) {
+    this.install = function (paths, verbose) {
         if (verbose)
             console.log(`DISCOVERING MODULES`);
-        var modules = discoverModules(path);
-        if (verbose) {
-            console.log(`Found ${modules.length} modules under '${path}'`);
-        }
+        var modules = Array.from(discoverModules(paths, verbose).values());
+        if (verbose)
+            console.log(`TOTAL ${modules.length} MODULE(S) IN ${paths.length} PATH(S).`)
+
         modules.forEach(module => {
             module.install($, verbose);
-        });
+        })
         if (verbose) {
             console.log('--------------------------------')
             console.log(`All modules installed.`);

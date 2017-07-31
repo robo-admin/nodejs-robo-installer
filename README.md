@@ -10,10 +10,11 @@ _If you haven't used `robo-container` yet, you are strongly recommended to try i
 - [Installing](#installing)
 - [Getting Started](#getting-started)
 - [Module Definition](#module-definition)
-- [Nested Module](#nested-module)
+- [Nested Modules](#nested-modules)
 - [Customizing Module Installation](#customizing-module-installation)
 - [Module Installation Checks](#module-installation-checks)
 - [Verbose Installation](#verbose-installation)
+- [Installing From Different Root Paths](#installing-from-different-root-paths)
 
 ## Installing
 
@@ -58,7 +59,7 @@ To install this module, add following statements into your app's `index.js`:
 ```js
 const $ = require('robo-container');
 var installer = require('robo-installer')($);
-installer.install(`${__dirname}/my-modules`);
+installer.install([`${__dirname}/my-modules`]);
 ```
 
 To ask the module to say something:
@@ -81,7 +82,7 @@ Metadata is mandatory for all modules. It must be an object that is assigned to 
 - `use` (optional): An array that specifies dependencies which will be passed to this module via Constructor or a Building Method.
 - `set` (optional): An object that specifies dependencies which will be injected to module via Property Injection.
 - `singleton` (optional): A flag that indicates if the module instance is singleton or not. False (transient) by default.
-- `install` (optional): A method that is used for custom installation of the module. See Customizing Module Installation for more information.
+- `install` (optional): A method that is used for custom installation of the module. See [Customizing Module Installation](#customizing-module-installation) for more information.
 - `on` (optional): An object that contains a Pre-installation Check, a Post-installation Check and a Final Check functions. See [Module Installation Checks](#module-installation-checks) for more information.
 
 For example, given your application has four custom modules: `users`, `log`, `emitter`, and `db`. All located in folder `modules`: 
@@ -286,7 +287,7 @@ var dbName = config.DB_NAME; // 'mydb'
 
 ## Customizing Module Installation
 
-Besides auto-installing modules with dependencies and life cycle given in `meta.js`, Robo Installer also gives you ability to customize installation of any particular module. To manually install a module, specify function `install` in its `meta.js`.
+Besides auto-installing modules with dependencies and life cycle specified in `meta.js`, Robo Installer also gives you ability to customize installation of any particular module. To manually install a module, specify function `install` in its `meta.js`.
 
 ```js
 // meta.js
@@ -303,7 +304,7 @@ The function `install` accepts following parameters:
 - <strong>name</strong>: Name of the module recognized by the Module Installer, e.g 'config', 'config.development'.
 - <strong>path</strong>: Path to the directory that contains the module.
 
-_Once specified, only function `install` will take effects and all other settings including `use`, `set` and `singleton` will be skipped._
+_Once specified, only two options `install` and `on` will take effects and all others including `use`, `set` and `singleton` will be skipped._
 
 Let's say your `pricing` module has more than one payload files: `gateway.js` and `connector.js` and you want to install them all at once:
 
@@ -325,6 +326,12 @@ module.exports = {
     install: function($, name, path) {
         $.bind(`${name}.connector`).to(`${path}/connector.js`); // $('pricing.connector') will return a connector.
         $.bind(name).to(`${path}/gateway.js`).use(`${name}.connector`); // $('pricing') will return a gateway.        
+    }
+
+    on: {
+        installed: ($, name, path) => {
+            // do some post-install checks here.
+        }
     }
 }
 ```
@@ -366,7 +373,7 @@ _Do not install any utility library as module, e.g ImmutableJS. Otherwise you wi
 
 A Thin Module is a module that only has metadata, no payloads.
 
-As Thin Module does not have any payloads, its `meta.js` can only accept function `install`. Any other option like `use`, `set` or `singleton` will not be applicable. The function `install` will be used to initialize the module inself and register it to the container.
+As Thin Module does not have any payloads, its `meta.js` can only accept function `install` and option `on`. Any other option like `use`, `set` or `singleton` will not be applicable. The function `install` will be used to initialize the module inself and register it to the container.
 
 Thin Module is useful in case of you want to have a light-weight module with small amount of code, or you want to use the module to install some `node_modules` as mentioned in Customizing Module Installation.
 
@@ -375,12 +382,12 @@ Below example uses a thin `config.development` module:
 ```js
 // meta.js
 module.exports = {
-    install: function ($, name, path) {
-        $.bind(name).to({
+    install: ($, name, path) => {
+        $.bind(name).to(Object.freeze({
             DB_HOST: 'localhost',
             DB_NAME: 'mydb'
             // and more...
-        });
+        }));
     }
 }
 ```
@@ -517,7 +524,7 @@ module.exports = {
 If you want the installer to give you more detailed information of what it was doing during installation process, use install with verbose option:
 
 ```js
-installer.install(__dirname + '/modules', true); // verbose set to true. False by default.
+installer.install([__dirname + '/modules'], true); // verbose set to true. False by default.
 ```
 
 Output in console will look like: 
@@ -540,3 +547,41 @@ Final Check PASSED.
 --------------------------------
 INSTALLATION COMPLETED
 ```
+
+## Installing From Different Root Paths
+
+Robo Installer allows you to install modules from several different locations in sequence. Below is an example demonstrating installation of module from two directories `modules` and `plugins`:
+
+```js
+installer.install([__dirname + '/modules', __dirname + '/plugins']);
+```
+
+The modules residing under these directories will be installed sequently in a REVERTED ORDER of parameters given to the function `install`. It means that all modules under `plugins` will be installed first, then `modules`.
+
+If both `modules` and `plugins` have a module with the same name, that module in `plugins` will be installed and the one in `modules` will be skipped. For example:
+
+Imagine you have a project structure that looks like following: 
+
+```
+your-app
+|- index.js
+|- modules
+|  |- users
+|  |  |- meta.js
+|  |  |- payload.js
+|  |- db
+|  |  |- meta.js
+|  |  |- payload.js
+|- plugins
+|  |- db
+|  |  |- meta.js
+|  |  |- payload.js
+```
+
+In your `index.js`, install modules and plugins respectively:
+
+```js
+installer.install([__dirname + '/modules', __dirname + '/plugins']);
+```
+
+Then a call to `$('db')` will return instance of `db` under `plugins` in result. This mechanism is helpful should you want to keep your core application modules code intact (the directory `modules`), while still allowing flexible replacement of some particular modules with ease.
