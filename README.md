@@ -5,6 +5,16 @@ _It is NOT intended for auto-installing all `node_modules` as you should avoid d
 
 _If you haven't used `robo-container` yet, you are strongly recommended to try it out first before getting started with this installer._
 
+## Table of Contents
+
+- [Installing](#installing)
+- [Getting Started](#getting-started)
+- [Module Definition](#module-definition)
+- [Nested Module](#nested-module)
+- [Customizing Module Installation](#customizing-module-installation)
+- [Module Installation Checks](#module-installation-checks)
+- [Verbose Installation](#verbose-installation)
+
 ## Installing
 
 ```
@@ -72,7 +82,7 @@ Metadata is mandatory for all modules. It must be an object that is assigned to 
 - `set` (optional): An object that specifies dependencies which will be injected to module via Property Injection.
 - `singleton` (optional): A flag that indicates if the module instance is singleton or not. False (transient) by default.
 - `install` (optional): A method that is used for custom installation of the module. See Customizing Module Installation for more information.
-- `on` (optional): An object that contains a Pre-installation Check, a Post-installation Check and a Final Check functions. See Installation Checklist for more information.
+- `on` (optional): An object that contains a Pre-installation Check, a Post-installation Check and a Final Check functions. See [Module Installation Checks](#module-installation-checks) for more information.
 
 For example, given your application has four custom modules: `users`, `log`, `emitter`, and `db`. All located in folder `modules`: 
 
@@ -493,7 +503,7 @@ Similar to `installing` and `installed`, you can throw an error from inside this
 module.exports = {
     ...
     on: {
-        installed: ($, name, path) => {
+        allInstalled: ($, name, path) => {
             var finalCheckPassed = doFinalCheck();     
             if (!finalCheckPassed)                           
                 throw new Error(`Some modules were improperly installed.`)               
